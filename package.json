@@ -17,7 +17,7 @@
     "deploy": "gatsby build && gh-pages -d public -b main"
   },
   "dependencies": {
-    "@lekoarts/gatsby-theme-minimal-blog": "^6.0.5",
+    "@lekoarts/gatsby-theme-minimal-blog": "^6.1.2",
     "disqus-react": "^1.1.5",
     "gatsby": "^5.10.0",
     "gatsby-plugin-feed": "^5.10.0",
