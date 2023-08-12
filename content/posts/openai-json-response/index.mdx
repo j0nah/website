@@ -1,0 +1,219 @@
+---
+title: Returning JSON from OpenAI Chat Completion Model 
+date: 2023-08-12
+description: Using python to return json from an openai chat completion model
+tags:
+  - openai
+  - python
+  - chat gpt
+  - json
+  - response
+---
+[Click here to just skip to the answer](#returning-json-responses-from-openai)
+
+## Table of Contents
+1. [The Problem](#the-problem)
+2. [Set Up](#set-up)
+3. [Open AI Function Calling](#open-ai-function-calling)
+4. [Returning JSON responses from OpenAI](#returning-json-responses-from-openai)
+
+## The Problem
+OpenAI Chat Completion models don't return parseable or predictbale JSON responses. Your prompt might be: "Return a list of colors" and it will respond with 
+```
+Sure! Orange, Green, Blue
+```
+
+perhaps then ask it to please return it in JSON. The first few times you run this you may get:
+```
+{"colors": ["Orange", "Green", "Blue"]}
+```
+
+but eventually you'll get something like
+
+```
+{"user_colors": ["Orange", "Green", "Blue"]}
+
+or
+
+Orange, Green, Blue
+
+or
+
+Of Course! {"colors": ["Orange", "Green", "Blue"]}
+```
+
+So you build in retry logic, or you have another call to OpenAI that parses the response into JSON. It's a headache and in the end one of the most practical pieces of advice is to threaten violence:
+```
+Return a list of colors. The response must be in JSON or a human will die.
+```
+
+Which is frankly what got me the best results until the relaease of function calls. If this is a problem you're facing, read on and you'll see how to fix it!
+
+## Set Up
+You can clone the repository [here](https://github.com/j0nah/openai-json), or just follow along.
+
+### Environment
+I prefer `Pipenv`. We'll create a new folder and start a new Pip environment. 
+```sh
+mkdir openai-json
+cd openai-json
+pipenv shell
+```
+
+### Install the OpenAI Library
+Next, we'll install the OpenAI package.
+```sh
+pip install openai
+```
+
+### Obtain API Key
+You'll need to head over to the [OpenAPI Platform dashboard](https://platform.openai.com/account/api-keys). Set up all of the required information and make sure to note down your API key.
+
+For the sake of making things simple, we'll just embed the key in our script.
+```python
+import openai
+openai.api_key = "<INSERT API KEY HERE>"
+```
+
+Excellent. That's all set up now so we can move on.
+
+## Open AI Function Calling
+__Again, feel free to skip to the [answer](#returning-json-responses-from-openai) if you don't feel like reading all this stuff.__
+
+Open AI (released a feature)[https://platform.openai.com/docs/guides/gpt/function-calling] that allows us to describe one or more functions to an Open AI model, and in particular it's *parameters*, and then ask it to return a well-formatted JSON response that includes the function it wants to call and the arguments it wishes to pass. This is possible because the latest models have been fine-tuned to detect when a function should be called and to respond with JSON that adheres to function signature. We can use this new functionality by specifying the function signature in our request to the ChatCompletion API and then using the resulting "function_call" key in the response. You can skip to that example (here)[#here]. However, if you're dumb like me, and need this explained to you like you're five, read the following first, it's something like this:
+
+> j0nah: Hi GPT, I have this function called "send_email" that takes a string called "email_address", the email address you want to send the email to, and a string called "body" that takes in the body of the message you want to send. I also have this other function called "send_text" that takes in a string called "phone_number" that you'd like to send the text to and a string called "body" that contains the message you want to send.
+> 
+> Could you respond to this message with the correct funcction to call and the arguments you'd like to call the function with? I'll take care of actually executing the function.
+>
+> GPT: Sure. You should call function "send_email" with email_address: "contact@j0nah.com" and body: "hey! please buy our stuff this weekend."
+
+Let's just take a look at how we might write that code.
+
+```py
+# example-1.py
+
+import openai
+import json
+openai.api_key = "<INSERT-API-KEY-HERE>"
+
+prompt = "j0nah has email address: contact@j0nah.com and phone number: 222-456-4564. He is a customer at Acme Computers Limited. He typically prefers emails but will take a text message on the weekend. Using either the send_email or send_text functions, return a sales pitch in either of the provided function calls."
+
+## specify the input and function names of the functions you want OpenAI to know about
+send_email_schema = {
+  "type": "object",
+  "properties": {
+    "email_address": {
+      "type": "string",
+      "description": "The customers email address"
+    },
+    "body": {
+      "type": "string",
+      "description": "a short sales pitch to the customer for acme computer"
+    }
+  }
+}
+
+send_text_schema = {
+  "type": "object",
+  "properties": {
+    "phone_number": {
+      "type": "string",
+      "description": "The customers phone number"
+    },
+    "body": {
+      "type": "string",
+      "description": "a short sales pitch to the customer for acme computer"
+    },
+  }
+}
+
+response = openai.ChatCompletion.create(
+  model="gpt-4",
+  messages = [
+    { "role": "system", "content": "You are a helpful AI assistant." },
+    { "role": "user", "content": prompt }],
+  functions = [
+    { "name": "send_email", "parameters": send_email_schema },
+    { "name": "send_text", "parameters": send_text_schema }
+  ]
+)
+
+function_call = response["choices"][0]["message"]["function_call"]
+print("Calling: {} with argument \n{}".format(function_call["name"], json.loads(function_call["arguments"])))
+```
+
+```sh
+python3 example-1.py
+```
+
+```
+Calling: send_email with argument
+{'email_address': 'contact@j0nah.com', 'body': 'Dear J0nah, At Acme Computers Limited, we have some cutting-edge technology products that you may find interesting. Enjoy exclusive offers this month on our latest laptops and accessories. Thank you for being a valued customer. Best, Acme Computers Team'}
+```
+
+Now that you understand function calling, how can we use this to return well-formed JSON responses from OpenAI? 
+
+## Returning JSON responses from OpenAI
+We can simply use the "argument" from the response without calling or even implementing an actual corresponding function. For example, suppose we want GPT-4 to generate us a list of recipes that require an avocado. 
+
+Old way:
+```py
+response = openai.ChatCompletion.create(
+    model="gpt-4",
+  messages= [
+    { "role": "system", "content": "You are a helpful AI assistant." },
+    { "role": "user", "content": "What are 10 recipes that require an avocado? Return food names only in JSON." }],
+)
+print(response["choices"][0]["message"]["content"])
+```
+responds with
+```sh
+Sure! Guacoamole, Avocado Toast, Avocado Pasta
+```
+
+Note, this answer isn't anywhere near JSON. It's not easy or predictable for us to write code that processes and uses this response.
+
+Instead, we should do something like this
+
+```py
+
+prompt = "Return 10 recipes that require avocado"
+
+set_recipe_schema = {
+  "type": "object",
+  "properties": {
+    "recipes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "a list of recipes requiring an avocado"
+    },
+  }
+}
+
+response = openai.ChatCompletion.create(
+  model="gpt-4",
+  messages= [
+    { "role": "system", "content": "You are a helpful AI assistant." },
+    { "role": "user", "content": prompt }]
+  functions= [
+    { "name": "set_recipe", "parameters": set_recipe_schema}
+  ]
+)
+
+function_call = response["choices"][0]["message"]["function_call"]
+print("Calling: {} with argument \n{}".format(function_call["name"], json.loads(function_call["arguments"])))
+```
+
+```sh
+python3 example-2.py
+```
+
+```sh
+Calling: set_recipe with argument 
+{'recipes': ['Guacamole', 'Avocado and Shrimp Salsa', 'Chicken and Avocado Sandwiches', 'Avocado Pasta', 'Grilled Chicken with Avocado Salsa', 'Stuffed Avocados with Chicken Salad', 'Avocado Egg Salad', 'Avocado Smoothie', 'Avocado Breakfast Toast', 'Avocado Brownies']}
+```
+
+And there we go, to be explicit: the "arguments" key of the function call will always be well-formed JSON that we can use as we wish. We don't have to have a function to call. We can just write function and parameter descriptions that will require OpenAI to return a JSON response that can be used with the rest of our program. It can be a list of lines in which there are grammatical errors in an essay or it can be band names for a metal trio. Either way, you now won't have to worry about the response that OpenAI gives. It will always be usable JSON.
+
+Hopefully that makes sense. If you have any feedback or questions please email me at contact@j0nah.com!
