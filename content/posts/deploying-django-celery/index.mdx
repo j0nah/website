@@ -1,0 +1,269 @@
+---
+title: Deploying a Django Celery App on AWS
+date: 2023-08-20
+description: A post about deploying a django celery app on AWS
+tags:
+  - django
+  - celery
+  - python
+---
+
+
+## Table of Contents
+
+## Set Up
+### What are we building?
+We're going to build a very simple Django application that generates random numbers. The components are:
+1. An API that can be used to submit a request for a random number. It will return an ID that can be used to look up the number when it's ready.
+2. An API that can be used to look up a previously generated random number based on the ID from (1).
+3. A background worker that executes and fulfills the requests to generate a random number.
+4. A database to store the numbers and IDs in.
+
+### What technologies will we use?
+1. Python
+2. Django
+3. AWS
+3. EC2 
+4. RDS
+5. Celery
+6. Elasticache (as a backing datastore for Celery)
+
+### Django Project
+Let's create a Django project from scratch. You can also clone this repository [here](https://github.com/j0nah/randomnumbergen). 
+
+```sh
+django-admin startproject randomnumbergen
+cd randomnumbergen/
+```
+
+Use whichever Python virtual environment tool you prefer. I like `Pipenv`.
+
+```sh
+pipenv shell
+```
+
+Run migrations
+```sh 
+python3 manage.py migrate
+```
+
+Make sure the local server is running
+
+```sh
+python managr.py runserver
+
+August 13, 2023 - 20:31:06
+Django version 4.2.4, using settings 'randomnumbergen.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+```
+
+If you can reach your local server at [http://127.0.0.1:8000/](http://127.0.0.1:8000/) then we're good to move on
+
+### Random Number Application
+We'll create a super simple application to house our model and views called `randomnumbers`
+
+```sh
+python3 manage.py startapp randomnumbers
+```
+
+Register the application in `settings.py`
+
+```python
+## randomnumbergen/settings.py
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    ## custom applications
+    "randomnumbers"
+]
+```
+
+Let's add a model to store our data in
+
+```python
+# randomnumbergen/randomnumbers/models.py
+
+from django.db import models
+
+class RandomNumber(models.Model):
+    # setting null to true because when we first create this record it will be null and later filled in
+    # by the celery worker
+    number = models.IntegerField(null=True)
+```
+
+Run migrations
+
+```sh
+python manage.py makemigrations
+python manage.py migrate
+```
+Now, let's set up a basic view to get some random numbers. We'll create two endpoints:
+
+```
+GET /randomnumbers/1/ # returns an ID and submits a request for a random number
+GET /randomnumbers/<:id>/ # returns a status indicating whether or not the number is ready and a random number if it exists
+```
+
+Our view is super simple and looks like this
+```python
+# randomnumbers/views.py
+
+from randomnumbers.models import RandomNumber
+from django.http import JsonResponse
+
+def random_number_request(request):
+    rn = RandomNumber.objects.create()
+    return JsonResponse({"id": rn.id})
+
+def random_number_status(request, id):
+    rn = RandomNumber.objects.get(id=id)
+    response = {
+        "id": rn.id,
+        "status": "in_progress",
+        "number" : None
+    }
+
+    if rn.number:
+        response["status"] = "complete"
+        response["number"] = rn.number
+
+    return JsonResponse(response)
+```
+
+```python
+# randomnumbers/urls.py
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    # ex: /randomnumbers/
+    path("", views.random_number_request),
+    # ex: /randomnumbers/5/
+    path("<int:id>/", views.random_number_status),
+]
+```
+
+```python
+# randomnumbergen/urls.py
+
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('randomnumbers/',include('randomnumbers.urls')),
+]
+```
+
+Restart your server, open a browser, and navigate [http://localhost:8000/randomnumbers](http://localhost:8000/randomnumbers). Your server should respond with:
+```json
+{
+  "id": 1
+}
+```
+
+Then head over to http://localhost:8000/randomnumbers/1](http://localhost:8000/randomnumbers/1). Your server should respond with:
+
+```json
+{
+  "id": 1,
+  "status": "in_progress",
+  "number": null
+}
+```
+
+If that all works then boom! We're done setting up our API and we're going to move on to our celery application.
+
+## Set Up Celery Application
+As a reminder, we want our Celery application to:
+1. Generate a random number for each RandomNumber record with a null `number` filled
+2. Update that record with the generated number
+
+### Install Celery
+```sh
+pipenv install celery
+```
+
+### Install Redis
+We'll use Redis locally for our message broker and task backend. Head over to the [Redis website](https://redis.io/docs/getting-started/installation/) for installation instructions.
+
+Finally, install the Redis python package
+```sh
+pipenv install redis
+```
+
+### Make sure it's all working
+We'll need a couple different terminals running for this one:
+
+Start up your redis server
+```sh
+redis-server
+
+57955:M 13 Aug 2023 15:58:35.888 # WARNING: The TCP backlog setting of 511 cannot be enforced because kern.ipc.somaxconn is set to the lower value of 128.
+57955:M 13 Aug 2023 15:58:35.888 # Server initialized
+57955:M 13 Aug 2023 15:58:35.888 * Ready to accept connections
+```
+
+Start up your Celery worker
+```sh
+python -m celery -A randomnumbergen worker
+```
+
+Uh oh! This fails with the error
+
+```sh
+TODO
+```
+
+That's because we need to define our celery config file. Inside the `randomnumbergen` directory, create a file called `celery.py`
+
+```python
+# randomnumbergen/celery.py
+
+import os
+from celery import Celery
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "randomnumbergen.settings")
+app = Celery("randomnumbergen")
+app.config_from_object("django.conf:settings", namespace="CELERY")
+app.autodiscover_tasks()
+```
+
+Darn! Stll more errors
+
+```sh
+[ERROR/MainProcess] consumer: Cannot connect to amqp://guest:**@127.0.0.1:5672//: [Errno 61] Connection refused.
+Trying again in 4.00 seconds... (2/100)
+```
+
+We still need to define our broker and result URLs. We'll do this in the `randomnumbergen/settings.py` file
+
+```python
+# randomnumbergen/settings.py
+
+# Celery settings
+CELERY_BROKER_URL = "redis://localhost:6379"
+CELERY_RESULT_BACKEND = "redis://localhost:6379"
+```
+
+Try one more time:
+
+```sh
+python -m celery -A randomnumbergen worker
+```
+
+and you should no longer receive any errors!
+
+## Set Up Celery Task
+Now that we've got out API and our Celery worker set up, let's define a very simple Celery task. 
+
+
+
+### EC2
