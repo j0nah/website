@@ -8,6 +8,7 @@ tags:
   - python
 ---
 
+https://medium.com/clean-slate-technologies/deploy-celery-and-celery-beat-in-production-with-django-ubuntu-de71ccb24907
 
 ## Table of Contents
 
@@ -236,6 +237,17 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 ```
 
+We'll also need to add celery to our `__init__.py` file to make sure it starts up with our Django server.
+
+```python
+# randomnumbergen/__init__.py
+
+from .celery import app as celery_app
+
+__all__ = ("celery_app",)
+```
+
+
 Darn! Stll more errors
 
 ```sh
@@ -261,9 +273,89 @@ python -m celery -A randomnumbergen worker
 
 and you should no longer receive any errors!
 
-## Set Up Celery Task
+### Set Up Celery Task
 Now that we've got out API and our Celery worker set up, let's define a very simple Celery task. 
 
+Since we included
+```python
+app.autodiscover_tasks()
+```
+
+inside our `celery.py` file, we need to define our tasks inside of a `tasks.py` file in each app. 
+
+We'll create a super simple task that takes in a the primary key ID of a random number record, generates a random number between 0 and 100, and then saves that number to the record.
+
+```python
+# randomnumbers/tasks.py
+
+import random
+from celery import shared_task
+from randomnumbers.models import RandomNumber
+
+@shared_task()
+def generate_random_number(request_id):
+    """Generates a random number from 0 to 100 and persists it on the random number request"""
+    rn = RandomNumber.objects.get(id=request_id)
+    num = random.randrange(100)
+    rn.number = num
+    rn.save()
+```
+
+Note, in the above task, we're wrapping our task function in the `shared_task` decorator. This allows Celery to execute it as a task with one of it's workers. It won't work without this!
+
+Finally, we'll go back to our view and submit the above task whenever a user it's our index view.
+
+We'll import the task we just created and then submit a job to Celery using the `delay` method. This method is made available because we wrapped our function definition in the `shared_task` annotation.
+
+```python
+from randomnumbers.models import RandomNumber
+from django.http import JsonResponse
+from randomnumbers.tasks import generate_random_number
+
+def random_number_request(request):
+    rn = RandomNumber.objects.create()
+    generate_random_number.delay(rn.id)
+    return JsonResponse({"id": rn.id})
+```
+
+Note, when submitting the task for async execution, we don't pass the arguments into the function like we normally would, instead we pass them into the `delay` method. 
+
+```python
+# wrong
+generate_random_number(rn.id)
+
+# wrong
+generate_random_number(rn.id).delay()
+
+# right
+generate_random_number.delay(rn.id)
+```
+
+Alright, let's go test it out. Head over to [http://localhost:8000/randomnumbers](http://localhost:8000/randomnumbers) and get a new ID. Check the status at [http://localhost:8000/randomnumbers/<id here>](http://localhost:8000/randomnumbers/id here>) and you should see that a random number has been generated in the number field and the status is `complete`. 
+
+If this seems fishy and you want to double-check that the task is actually happening async (fair -- it is very fast) then add a sleep to the task.
+
+```python
+# randomnumbergen/randomnumbers/task.py
+import random
+from celery import shared_task
+from randomnumbers.models import RandomNumber
+import time
 
 
-### EC2
+@shared_task()
+def generate_random_number(request_id):
+    """Generates a random number from 0 to 100 and persists it on the random number request"""
+    rn = RandomNumber.objects.get(id=request_id)
+    num = random.randrange(100)
+    time.sleep(10)
+    rn.number = num
+    rn.save()
+```
+
+Try again but this time you'll see that you need to wait about 10 seconds before the status page gives us a number.
+
+### Round Up
+Where are we at? What have we done so far?
+
+## Deploying to AWS
