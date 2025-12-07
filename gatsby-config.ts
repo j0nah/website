@@ -8,9 +8,9 @@ const config: GatsbyConfig = {
     // You can overwrite values here that are used for the SEO component
     // You can also add new values here to query them like usual
     // See all options: https://github.com/LekoArts/gatsby-themes/blob/main/themes/gatsby-theme-minimal-blog/gatsby-config.mjs
-    siteTitle: `Stuff I don't want to forget`,
-    siteTitleAlt: `Stuff I don't want to forget`,
-    siteHeadline: `Stuff I don't want to forget`,
+    siteTitle: `j0nah.com`,
+    siteTitleAlt: `j0nah.com`,
+    siteHeadline: `j0nah.com`,
     siteUrl: `https://j0nah.com`,
     siteDescription: `A website I made to document stuff I learn and don't want to forget.`,
     siteImage: `/banner.jpg`,
@@ -37,11 +37,15 @@ const config: GatsbyConfig = {
             title: `About`,
             slug: `/about`,
           },
+          {
+            title: `Contact`,
+            slug: `/contact`,
+          },
         ],
         externalLinks: [
           {
-            name: `Github`,
-            url: `https://github.com/j0nah`,
+            name: `LinkedIn (I'm hiring engineers!)`,
+            url: `https://www.linkedin.com/in/jonah-glover-6847b85b/`,
           },
           // {
           //   name: `Homepage`,
@@ -128,7 +132,7 @@ const config: GatsbyConfig = {
   }
 }`,
             output: `rss.xml`,
-            title: `Stuff I don't want to forget - j0nah.com`,
+            title: `j0nah.com`,
           },
         ],
       },
