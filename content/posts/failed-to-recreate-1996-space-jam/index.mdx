@@ -10,6 +10,8 @@ tags:
   - computer vision
 ---
 
+[Link to the Hacker News post](https://news.ycombinator.com/item?id=46183294). Thanks everybody for all the engagement!
+
 Can Claude Recreate the 1996 Space Jam Website? No. Or at least not with my prompting skills. Note: please help, because I'd like to preserve this website forever and there's no other way to do it besides getting Claude to recreate it from a screenshot. Believe me, I'm an engineering manager with a computer science degree. Please please please help 😞
 
 Final note: I use "he" to refer to Claude, which [Josh](https://www.linkedin.com/in/joshcurl/) finds ridiculous.
@@ -31,9 +33,13 @@ At a minimum, I'm providing Claude:
 
 To track Claude's inner monologue and actual API calls, I set up a man-in-the-middle proxy to capture the full conversation between Claude Code and Anthropic's API. This logs everything: user prompts, Claude's responses, tool invocations (Read, Write, Bash commands), etc. Each attempt generates a `traffic.log` file with the raw API traffic, which I then parse for easier analysis.
 
+Edit:I used Opus 4.1 for this investigation. Thanks to [anorwell](https://news.ycombinator.com/item?id=46185636) for pointing out I forgot to add the model.
+
 ## Part 1: Claude the Realist
 
-The Space Jam website is simple: a single HTML page, absolute positioning for every element, and a tiling starfield GIF background. The entire page uses absolute positioning with pixel specific left/top values. The total payload is under 200KB.
+The Space Jam website is simple: a single HTML page, <del>absolute positioning for every element</del>, and a tiling starfield GIF background. <del>The entire page uses absolute positioning with pixel specific left/top values.</del> The total payload is under 200KB.
+
+Correction: The original site is built using tables. Thanks to [wilsmex](https://news.ycombinator.com/item?id=46186253) and [sqircles](https://news.ycombinator.com/item?id=46184964) for calling that out!
 
 Given that Claude has all of the assets + screenshots of the website, I assume this should be relatively boring. He'll nail it, and we'll move on to something much more. A mildly cute example of agentic HTML generation…
 
